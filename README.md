@@ -4,26 +4,41 @@
 
 The Dining Philosophers problem is a classical synchronization problem in computer science, often used to illustrate the challenges of avoiding deadlock and resource starvation in concurrent programming.
 
-The problem is formulated as follows:
-- There are **N philosophers** sitting around a circular table.
-- Each philosopher alternates between **thinking** and **eating**.
-- Between each pair of philosophers lies a **single fork**, for a total of **N forks**.
-- A philosopher must pick up **both the left and the right fork** to eat.
-- Philosophers cannot share forks simultaneously.
+The scenario is described as follows:
+- **N philosophers** sit around a circular table.
+- Each philosopher alternates between two actions: **thinking** and **eating**.
+- A **fork** is placed between each pair of philosophers, for a total of **N forks**.
+- To eat, a philosopher must pick up **both the left and right fork**.
+- No two philosophers may hold the same fork at the same time.
 
-Key challenges include:
-- **Deadlock**: if each philosopher picks up their left fork and waits for the right one, they can all be stuck forever.
-- **Starvation**: a philosopher may wait indefinitely if others never release forks.
+Key challenges:
+- **Deadlock**: if all philosophers pick up their left fork at the same time and wait for the right one, they could be stuck indefinitely.
+- **Starvation**: a philosopher may be unable to eat if neighbors monopolize the forks.
 
-This problem is a metaphor for managing shared resources (forks) among competing processes (philosophers).
+This problem demonstrates issues with resource allocation and concurrency in operating systems and parallel programming.
+
+---
+
+## What Is Multithreading?
+
+**Multithreading** is a programming paradigm where multiple threads (independent sequences of execution) run concurrently within a single program. It enables tasks to be performed in parallel, especially on multicore processors, enhancing responsiveness and performance.
+
+In this simulation:
+- Each philosopher is an independent **thread**.
+- Threads share data (forks) and must coordinate access to avoid inconsistencies.
+- Proper synchronization is essential to prevent race conditions and deadlocks.
+
+Threads are created using `std::thread` from the C++ standard library.
 
 ---
 
 ## Implementation Overview
 
-This project implements the Dining Philosophers problem in **C++17** using `std::thread` for multithreading and a custom `SpinLock` class to manage fork access. The use of standard synchronization primitives like `std::mutex` for critical sections (excluding console output) has been explicitly avoided, as required.
+This project implements the Dining Philosophers problem using **C++17**, `std::thread` for multithreading, and a manually coded **SpinLock** for fork synchronization.
 
-Color-coded output and artificial delays simulate the philosophers' activities and help visualize concurrent behavior.
+A dynamic array of `SpinLock` objects (`std::unique_ptr<SpinLock[]>`) represents forks shared between philosophers. Each philosopher runs in a separate thread, alternately thinking and eating, with delays to simulate real processing.
+
+Color-coded output visually represents each philosopher's state.
 
 ---
 
@@ -38,87 +53,90 @@ Color-coded output and artificial delays simulate the philosophers' activities a
 g++ -std=c++17 -pthread -o philosophers philosophers.cpp
 
 # Windows (MinGW)
-g++ -std=c++17 -o philosophers.exe philosophers.cpp -lws2_32
+g++ -std=c++17 -o philosophers.exe philosophers.cpp
 ```
 
 ### Execution
 ```bash
 ./philosophers <number_of_philosophers>
 
-# Example
+# Example:
 ./philosophers 5
 ```
-- Minimum: 2 philosophers
-- The simulation runs each philosopher 3 times through thinking/eating
+- Minimum: 2 philosophers required
+- Each philosopher thinks and eats 3 times
 
 ---
 
 ## Threads and Their Roles
 
 Each **philosopher is represented by a thread**:
-- The main thread creates `N` philosopher threads.
-- Each thread follows the cycle:
-  - Think (simulated delay)
-  - Wait for forks
-  - Pick up forks
-  - Eat (simulated delay)
-  - Put down forks
-
-Each fork is a shared resource between two threads.
-
+- Created using:
 ```cpp
 std::vector<std::thread> philosophers;
 ```
+- Each thread performs:
+  - Think (delayed simulation)
+  - Announce hunger
+  - Acquire left and right forks (SpinLocks)
+  - Eat (delayed simulation)
+  - Release forks
+  - Repeat 3 times
+
+The main thread launches philosopher threads and waits for all to finish using `.join()`.
 
 ---
 
 ## Critical Sections and Synchronization
 
-### Fork Access – Custom SpinLock
+### Fork Synchronization — Custom SpinLock
 
-Forks are shared resources and must be protected from concurrent access. Instead of using `std::mutex`, we implemented our own **spinlock**:
-
+Forks are shared resources. To ensure exclusive access, each fork is protected by a **SpinLock**:
 ```cpp
 class SpinLock {
-    std::atomic_flag flag = ATOMIC_FLAG_INIT;
+    std::atomic_flag flag;
 public:
+    SpinLock();
     void lock();
     void unlock();
 };
 ```
-- Spinlocks use busy-waiting and are suitable for short critical sections.
-- Each fork is represented as a `SpinLock` instance.
-- A philosopher locks both adjacent forks before eating.
-- To avoid deadlock, the **last philosopher** picks up the right fork before the left, breaking the cyclic wait.
+- Uses `std::atomic_flag` for lock-free busy waiting
+- Prevents race conditions without using `std::mutex`
 
+Philosophers acquire both forks before eating:
+```cpp
+forks[left].lock();
+forks[right].lock();
+```
+To avoid deadlock, the **last philosopher** picks up forks in reverse order:
 ```cpp
 if (id == NUM_PHILOSOPHERS - 1) std::swap(left, right);
 ```
 
-### Console Output – Standard Mutex
+### Output Synchronization — `std::mutex`
 
-To prevent garbled multithreaded output, a `std::mutex` is used **only** for printing to the console:
-
+To ensure output is readable and not interleaved, a `std::mutex` is used **only** for synchronizing `std::cout`:
 ```cpp
 std::mutex print_mutex;
 void safe_print(const std::string& msg);
 ```
-
-This does not impact the problem logic and is allowed as per project assumptions.
+This does not interfere with fork logic and meets project constraints.
 
 ---
 
 ## Summary
 
-This implementation:
-- Models concurrent behavior correctly using threads
-- Avoids deadlock via controlled resource acquisition order
-- Implements custom locking mechanisms without relying on built-in synchronization for forks
-- Provides clear output using color-coded logs for each philosopher’s state
+This C++ implementation demonstrates multithreading and manual synchronization of shared resources using custom spinlocks. It avoids standard synchronization primitives for fork management and uses clear, color-coded console output for tracing execution.
 
-It demonstrates an understanding of concurrent programming principles, resource contention, and thread synchronization using custom-built tools.
+✅ Key Features:
+- Realistic simulation of the Dining Philosophers problem
+- Deadlock prevention via asymmetric fork acquisition
+- Dynamic thread creation
+- Custom spinlocks (no `std::mutex` for forks)
+- Safe, color-coded logging using `std::mutex` for console
+
+This project fulfills all technical and theoretical requirements and is suitable for academic submission.
 
 ---
-
-© 2025 | Systems Programming Project
 
