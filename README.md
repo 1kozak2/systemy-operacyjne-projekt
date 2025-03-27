@@ -50,18 +50,18 @@ Color-coded output visually represents each philosopher's state.
 ### Compilation
 ```bash
 # Linux / macOS
-g++ -std=c++17 -pthread -o philosophers philosophers.cpp
+g++ -std=c++17 -pthread -o filozofowie filozofowie.cpp
 
 # Windows (MinGW)
-g++ -std=c++17 -o philosophers.exe philosophers.cpp
+g++ -std=c++17 -o filozofowie.exe filozofowie.cpp
 ```
 
 ### Execution
 ```bash
-./philosophers <number_of_philosophers>
+./filozofowie <number_of_filozofowie>
 
 # Example:
-./philosophers 5
+./filozofowie 5
 ```
 - Minimum: 2 philosophers required
 - Each philosopher thinks and eats 3 times
