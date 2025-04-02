@@ -1,77 +1,61 @@
-<<<<<<< HEAD
-# Dining Philosophers (C++)
-
-## 🧠 Project Description
-
-This project is a multithreaded simulation of the classical **Dining Philosophers** problem, implemented in C++ using `std::thread` and a custom synchronization primitive (`SpinLock`).
-
-The goal was to solve the problem without relying on any built-in mutex or semaphore mechanisms. Instead, we implemented thread synchronization manually and safely controlled access to shared resources (forks).
-
----
-
-## 🧪 How to Run
-
-```bash
-g++ -std=c++17 -pthread -o filozofowie filozofowie.cpp
-./filozofowie 5
-=======
-# Dining Philosophers Problem - C++ Implementation
+# Dining Philosophers Problem - C++ Implementation (Using Mutexes and a Semaphore)
 
 ## Theoretical Problem Description
 
-The Dining Philosophers problem is a classical synchronization problem in computer science, often used to illustrate the challenges of avoiding deadlock and resource starvation in concurrent programming.
-
-The scenario is described as follows:
+The Dining Philosophers problem is a classical synchronization problem illustrating challenges in concurrent programming, specifically:
 - **N philosophers** sit around a circular table.
-- Each philosopher alternates between two actions: **thinking** and **eating**.
-- A **fork** is placed between each pair of philosophers, for a total of **N forks**.
-- To eat, a philosopher must pick up **both the left and right fork**.
-- No two philosophers may hold the same fork at the same time.
+- Each philosopher alternates between **thinking** and **eating**.
+- There are **N forks** total, one between each pair of philosophers.
+- To eat, a philosopher must pick up **both** the left fork and the right fork.
+- No two philosophers can hold the same fork at the same time.
 
 Key challenges:
-- **Deadlock**: if all philosophers pick up their left fork at the same time and wait for the right one, they could be stuck indefinitely.
-- **Starvation**: a philosopher may be unable to eat if neighbors monopolize the forks.
+- **Deadlock**: where each philosopher has one fork and is waiting indefinitely for the other.
+- **Starvation**: a philosopher repeatedly misses opportunities to eat because neighbors hog resources.
 
-This problem demonstrates issues with resource allocation and concurrency in operating systems and parallel programming.
+This simulation demonstrates safe resource allocation and concurrency control.
 
 ---
 
 ## What Is Multithreading?
 
-**Multithreading** is a programming paradigm where multiple threads (independent sequences of execution) run concurrently within a single program. It enables tasks to be performed in parallel, especially on multicore processors, enhancing responsiveness and performance.
+**Multithreading** is a programming method where multiple sequences of execution (threads) run concurrently within the same program. It allows tasks to proceed in parallel on multicore machines, boosting performance and responsiveness.
 
 In this simulation:
-- Each philosopher is an independent **thread**.
-- Threads share data (forks) and must coordinate access to avoid inconsistencies.
-- Proper synchronization is essential to prevent race conditions and deadlocks.
+- Each philosopher is a **separate thread**.
+- The threads share fork objects, requiring coordination to avoid race conditions.
+- Proper synchronization ensures that no two philosophers use the same fork simultaneously and avoids deadlock.
 
-Threads are created using `std::thread` from the C++ standard library.
+Threads are managed via `std::thread` from the C++ standard library.
 
 ---
 
 ## Implementation Overview
 
-This project implements the Dining Philosophers problem using **C++17**, `std::thread` for multithreading, and a manually coded **SpinLock** for fork synchronization.
+This project implements the Dining Philosophers problem using **C++17**, leveraging:
+- **`std::thread`** for concurrency (one thread per philosopher).
+- **`std::mutex`** for fork synchronization (one mutex per fork).
+- **`std::counting_semaphore`** (from C++20) to further prevent deadlock by allowing only `N-1` philosophers to attempt picking up forks simultaneously.
 
-A dynamic array of `SpinLock` objects (`std::unique_ptr<SpinLock[]>`) represents forks shared between philosophers. Each philosopher runs in a separate thread, alternately thinking and eating, with delays to simulate real processing.
-
-Color-coded output visually represents each philosopher's state.
+Each philosopher thread **thinks** and **eats** multiple times, with random delays to simulate real processing. We use color-coded console output to visualize each philosopher’s actions.
 
 ---
 
 ## How to Compile and Run
 
 ### Requirements
-- A C++17-compatible compiler (e.g., g++, clang++)
+- A C++20-compatible compiler (for `<semaphore>`).  
+- Alternatively, a C++17 compiler with a backport/implementation of `<semaphore>` or a custom semaphore library.
 
 ### Compilation
 ```bash
 # Linux / macOS
-g++ -std=c++17 -pthread -o filozofowie filozofowie.cpp
+g++ -std=c++20 -pthread -o filozofowie filozofowie.cpp
 
 # Windows (MinGW)
-g++ -std=c++17 -o filozofowie.exe filozofowie.cpp
+g++ -std=c++20 -o filozofowie.exe filozofowie.cpp
 ```
+*(Replace `-std=c++20` with the relevant C++ standard if you have a custom semaphore backport.)*
 
 ### Execution
 ```bash
@@ -80,81 +64,54 @@ g++ -std=c++17 -o filozofowie.exe filozofowie.cpp
 # Example:
 ./filozofowie 5
 ```
-- Minimum: 2 philosophers required
-- Each philosopher thinks and eats 3 times
+- Minimum: 2 philosophers required.
+- Each philosopher alternates between thinking and eating 3 times.
 
 ---
 
 ## Threads and Their Roles
 
-Each **philosopher is represented by a thread**:
-- Created using:
-```cpp
-std::vector<std::thread> philosophers;
-```
-- Each thread performs:
-  - Think (delayed simulation)
-  - Announce hunger
-  - Acquire left and right forks (SpinLocks)
-  - Eat (delayed simulation)
-  - Release forks
-  - Repeat 3 times
+- **Philosopher threads**: Each philosopher runs in a separate thread.  
+- The main thread spawns all philosopher threads, then waits for them to finish (`join`).
 
-The main thread launches philosopher threads and waits for all to finish using `.join()`.
+Each philosopher:
+1. **Thinks** (delays to simulate computation).
+2. Declares intention to eat.
+3. **Acquires semaphore** to ensure no more than N-1 philosophers simultaneously try to pick forks.
+4. **Locks (acquires) the left and right fork** (using `std::mutex` on each).
+5. **Eats** (further delay).
+6. **Unlocks (releases) the forks**.
+7. **Releases the semaphore** so another philosopher can attempt to eat.
+8. Repeats several times before finishing.
 
 ---
 
 ## Critical Sections and Synchronization
 
-### Fork Synchronization — Custom SpinLock
+1. **Fork Synchronization — `std::mutex`**  
+   - We have an array of `std::mutex`, one per fork.  
+   - A philosopher must **lock** both forks before eating.  
+   - **Deadlock prevention**:  
+     - A global **counting semaphore** is used to ensure not all N philosophers try to lock forks simultaneously.  
+     - Additionally, the last philosopher in the sequence sometimes picks forks in reversed order to avoid circular lock dependencies.
 
-Forks are shared resources. To ensure exclusive access, each fork is protected by a **SpinLock**:
-```cpp
-class SpinLock {
-    std::atomic_flag flag;
-public:
-    SpinLock();
-    void lock();
-    void unlock();
-};
-```
-- Uses `std::atomic_flag` for lock-free busy waiting
-- Prevents race conditions without using `std::mutex`
+2. **Semaphore for Deadlock Avoidance**  
+   - A **`std::counting_semaphore`** is initialized to `NUM_PHILOSOPHERS - 1`.  
+   - Each philosopher **acquires** one permit before locking any forks, ensuring at least one philosopher is always blocked if all forks are busy.  
+   - Once finished eating, the philosopher **releases** a permit, allowing another philosopher to proceed.
 
-Philosophers acquire both forks before eating:
-```cpp
-forks[left].lock();
-forks[right].lock();
-```
-To avoid deadlock, the **last philosopher** picks up forks in reverse order:
-```cpp
-if (id == NUM_PHILOSOPHERS - 1) std::swap(left, right);
-```
-
-### Output Synchronization — `std::mutex`
-
-To ensure output is readable and not interleaved, a `std::mutex` is used **only** for synchronizing `std::cout`:
-```cpp
-std::mutex print_mutex;
-void safe_print(const std::string& msg);
-```
-This does not interfere with fork logic and meets project constraints.
+3. **Output Synchronization**  
+   - A separate `std::mutex` (`print_mutex`) controls access to `std::cout`.  
+   - This prevents interleaved or garbled console output from concurrent threads.
 
 ---
 
 ## Summary
 
-This C++ implementation demonstrates multithreading and manual synchronization of shared resources using custom spinlocks. It avoids standard synchronization primitives for fork management and uses clear, color-coded console output for tracing execution.
+This C++ implementation showcases:
+- **Multithreading** via `std::thread` (one thread per philosopher).
+- **Mutex-based** resource protection for forks, preventing race conditions.
+- **Counting semaphore** to prevent deadlock by limiting simultaneous fork requests to `N-1`.
+- **Console logging** with color codes for clarity, guarded by a separate mutex.
 
-✅ Key Features:
-- Realistic simulation of the Dining Philosophers problem
-- Deadlock prevention via asymmetric fork acquisition
-- Dynamic thread creation
-- Custom spinlocks (no `std::mutex` for forks)
-- Safe, color-coded logging using `std::mutex` for console
-
-This project fulfills all technical and theoretical requirements and is suitable for academic submission.
-
----
-
->>>>>>> project1
+It demonstrates a practical solution to the Dining Philosophers problem using **standard C++ concurrency tools** (`std::mutex` and `std::counting_semaphore`) while avoiding deadlock and starvation.
