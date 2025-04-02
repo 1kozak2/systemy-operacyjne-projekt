@@ -5,9 +5,14 @@
 #include <atomic>
 #include <mutex>
 #include <sstream>
-#include <ctime>         // for time()
+#include <ctime>       
 #include <memory>        // for std::unique_ptr
-#include <vector>        // <-- IMPORTANT: required for std::vector
+#include <vector>     
+#include <semaphore>     // C++20 counting_semaphore
+#include <climits>       
+
+
+
 
 // ANSI colors
 #define RESET   "\033[0m"
@@ -18,41 +23,24 @@
 #define MAGENTA "\033[35m"
 #define CYAN    "\033[36m"
 
-// A custom spinlock using std::atomic_flag
-class SpinLock {
-    std::atomic_flag flag;
+// Array of fork mutexes (dynamically allocated)
+static std::counting_semaphore<INT_MAX> table_sem(0);
+static std::unique_ptr<std::mutex[]> forks;
 
-public:
-    // Default constructor initializes the flag
-    SpinLock() : flag(ATOMIC_FLAG_INIT) {}
+// A counting semaphore to limit concurrency to N-1 philosophers
 
-    // Delete copy and move constructors (cannot copy or move atomic_flag)
-    SpinLock(const SpinLock&) = delete;
-    SpinLock& operator=(const SpinLock&) = delete;
-    SpinLock(SpinLock&&) = delete;
-    SpinLock& operator=(SpinLock&&) = delete;
+// Number of philosophers
+static int NUM_PHILOSOPHERS = 0;
 
-    void lock() {
-        while (flag.test_and_set(std::memory_order_acquire)) {
-            // busy-wait
-        }
-    }
-    void unlock() {
-        flag.clear(std::memory_order_release);
-    }
-};
-
-static std::unique_ptr<SpinLock[]> forks; // dynamically allocated array of SpinLock
-static int NUM_PHILOSOPHERS;             // number of philosophers
-static std::mutex print_mutex;           // for thread-safe printing
-
+// Mutex for thread-safe printing
+static std::mutex print_mutex;
 // Thread-safe print function
 void safe_print(const std::string& msg) {
     std::lock_guard<std::mutex> guard(print_mutex);
     std::cout << msg;
 }
 
-// The philosopher's routine
+// Philosopher routine
 void philosopher(int id) {
     int left = id;
     int right = (id + 1) % NUM_PHILOSOPHERS;
@@ -73,27 +61,29 @@ void philosopher(int id) {
             safe_print(msg.str());
         }
 
+        // Acquire the semaphore so we never have all N philosophers picking forks
+        table_sem.acquire();
+
         // To avoid deadlock, last philosopher picks forks in reversed order
         if (id == NUM_PHILOSOPHERS - 1) {
             std::swap(left, right);
         }
 
-        // Pick up left fork
+        // Lock the left fork
         forks[left].lock();
         {
             std::ostringstream msg;
-            msg << YELLOW << "Philosopher " << id << ": picked up left fork "
+            msg << YELLOW << "Philosopher " << id << ": picked up fork " 
                 << left << RESET << "\n";
             safe_print(msg.str());
         }
-
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
-        // Pick up right fork
+        // Lock the right fork
         forks[right].lock();
         {
             std::ostringstream msg;
-            msg << YELLOW << "Philosopher " << id << ": picked up right fork "
+            msg << YELLOW << "Philosopher " << id << ": picked up fork " 
                 << right << RESET << "\n";
             safe_print(msg.str());
         }
@@ -111,11 +101,11 @@ void philosopher(int id) {
         forks[left].unlock();
         {
             std::ostringstream msg;
-            msg << MAGENTA << "Philosopher " << id << ": put down forks." << RESET << "\n";
+            msg << MAGENTA << "Philosopher " << id << ": ate, put down forks." << RESET << "\n";
             safe_print(msg.str());
         }
+        table_sem.release();
     }
-
     // Finished
     {
         std::ostringstream msg;
@@ -135,17 +125,18 @@ int main(int argc, char* argv[]) {
         std::cerr << "There must be at least 2 philosophers.\n";
         return 1;
     }
-
-    // Seed random
     std::srand(static_cast<unsigned>(std::time(nullptr)));
 
-    // Allocate our spinlock array on the heap
-    forks = std::make_unique<SpinLock[]>(NUM_PHILOSOPHERS);
+    // Allocate the array of fork mutexes
+    forks = std::make_unique<std::mutex[]>(NUM_PHILOSOPHERS);
 
-    // Launch philosopher threads
+    // Initialize the semaphore count to NUM_PHILOSOPHERS - 1
+    // so that only up to N-1 philosophers can try to eat at once
+    table_sem.release(NUM_PHILOSOPHERS - 1);
+
+    // Create and start philosopher threads
     std::vector<std::thread> philosophers;
     philosophers.reserve(NUM_PHILOSOPHERS);
-
     for (int i = 0; i < NUM_PHILOSOPHERS; ++i) {
         philosophers.emplace_back(philosopher, i);
     }
